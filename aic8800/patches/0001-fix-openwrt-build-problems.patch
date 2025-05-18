@@ -1,0 +1,676 @@
+From 232cc4eab750aae0a825b926f9643da909357afa Mon Sep 17 00:00:00 2001
+From: Jordan <breloo.jn@gmail.com>
+Date: Sun, 18 May 2025 23:18:46 +0200
+Subject: [PATCH] fix openwrt build problems
+
+---
+ src/Kconfig                         |   4 +-
+ src/Makefile                        |  56 ---------
+ src/Module.symvers                  |   9 --
+ src/aic8800_fdrv/Kconfig            |  32 -----
+ src/aic8800_fdrv/Makefile           |  72 +----------
+ src/aic8800_fdrv/aicwf_wext_linux.c |   7 +-
+ src/aic8800_fdrv/rwnx_main.c        |  12 +-
+ src/aic8800_fdrv/rwnx_radar.c       |   4 +-
+ src/aic_load_fw/Makefile            |  53 +-------
+ src/aic_load_fw/aicbluetooth.c      |   2 +-
+ src/dkms.conf                       |  11 --
+ src/driverctl                       | 180 ----------------------------
+ src/load.sh                         |   6 -
+ 13 files changed, 20 insertions(+), 428 deletions(-)
+ delete mode 100644 src/Module.symvers
+ delete mode 100644 src/dkms.conf
+ delete mode 100755 src/driverctl
+ delete mode 100755 src/load.sh
+
+diff --git a/src/Kconfig b/src/Kconfig
+index 44970d1..e6e0d9e 100644
+--- a/src/Kconfig
++++ b/src/Kconfig
+@@ -1,6 +1,8 @@
+ config AIC_WLAN_SUPPORT
+ 	bool "AIC wireless Support"
+-	default n
++	default y
++	imply CONFIG_WIRELESS_EXT
++	depends on CONFIG_WEXT_CORE
+ 	help
+ 	  This is support for aic wireless chip.
+ 
+diff --git a/src/Makefile b/src/Makefile
+index 3603f60..45ccb92 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -5,66 +5,10 @@ CONFIG_AIC8800_WLAN_SUPPORT := m
+ obj-$(CONFIG_AIC_LOADFW_SUPPORT)    += aic_load_fw/
+ obj-$(CONFIG_AIC8800_WLAN_SUPPORT) += aic8800_fdrv/
+ 
+-
+-# Platform support list
+-CONFIG_PLATFORM_ROCKCHIP ?= n
+-CONFIG_PLATFORM_ALLWINNER ?= n
+-CONFIG_PLATFORM_AMLOGIC ?= n
+-CONFIG_PLATFORM_UBUNTU ?= y
+-
+-ifeq ($(CONFIG_PLATFORM_ROCKCHIP), y)
+-#KDIR := /home/yaya/E/Rockchip/3229/Android7/RK3229_ANDROID7.1_v1.01_20170914/rk3229_Android7.1_v1.01_xml0914/kernel
+-#ARCH ?= arm
+-#CROSS_COMPILE ?= /home/yaya/E/Rockchip/3229/Android7/RK3229_ANDROID7.1_v1.01_20170914/rk3229_Android7.1_v1.01_xml0914/prebuilts/gcc/linux-x86/arm/arm-eabi-4.6/bin/arm-eabi-
+-KDIR  := /home/yaya/E/Rockchip/3229/Android9/rk3229_android9.0_box/kernel
+-ARCH ?=$(shell uname -m | sed -e s/i.86/i386/ -e s/armv.l/arm/ -e s/aarch64/arm64/)
+-CROSS_COMPILE ?= /home/yaya/E/Rockchip/3229/Android9/rk3229_android9.0_box/prebuilts/gcc/linux-x86/arm/gcc-linaro-6.3.1-2017.05-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
+-#KDIR  := /home/yaya/E/Rockchip/3399/rk3399-android-10/kernel
+-#ARCH ?= arm64
+-#CROSS_COMPILE ?= /home/yaya/E/Rockchip/3399/rk3399-android-10/prebuilts/gcc/linux-x86/aarch64/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+-ccflags-y += -DANDROID_PLATFORM
+-endif
+-
+-ifeq ($(CONFIG_PLATFORM_ALLWINNER), y)
+-KDIR  := /home/yaya/E/Allwinner/R818/R818/AndroidQ/lichee/kernel/linux-4.9
+-ARCH ?= arm64
+-CROSS_COMPILE ?= /home/yaya/E/Allwinner/R818/R818/AndroidQ/lichee/out/gcc-linaro-5.3.1-2016.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+-ccflags-y += -DANDROID_PLATFORM
+-endif
+-
+-ifeq ($(CONFIG_PLATFORM_AMLOGIC), y)
+-ccflags-y += -DANDROID_PLATFORM
+-ARCH := arm
+-CROSS_COMPILE := /home/yaya/D/Workspace/CyberQuantum/JinHaoYue/amls905x3/SDK/20191101-0tt-asop/android9.0/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin/arm-linux-androidkernel-
+-KDIR := /home/yaya/D/Workspace/CyberQuantum/JinHaoYue/amls905x3/SDK/20191101-0tt-asop/android9.0/out/target/product/u202/obj/KERNEL_OBJ/
+-
+-endif
+-
+-ifeq ($(CONFIG_PLATFORM_UBUNTU), y)
+-KVER := $(or $(KVER), $(kernelver), $(KERNELRELEASE), $(shell uname -r))
+-KDIR ?= /lib/modules/$(KVER)/build
+-PWD  ?= $(shell pwd)
+-MODDESTDIR ?= /lib/modules/$(KVER)/kernel/drivers/net/wireless/aic8800
+-ARCH ?= $(shell uname -m | sed -e s/i.86/i386/ -e s/armv.l/arm/ -e s/aarch64/arm64/)
+-CROSS_COMPILE ?=
+-endif
+-
+-
+ all: modules
+ modules:
+ 	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules
+ 
+-install:
+-	mkdir -p $(MODDESTDIR)
+-	install -p -m 644 aic_load_fw/aic_load_fw.ko  $(MODDESTDIR)/
+-	install -p -m 644 aic8800_fdrv/aic8800_fdrv.ko  $(MODDESTDIR)/
+-	/sbin/depmod -a ${KVER}
+-
+-uninstall:
+-	rm -rfv $(MODDESTDIR)/aic_load_fw.ko
+-	rm -rfv $(MODDESTDIR)/aic8800_fdrv.ko
+-	/sbin/depmod -a ${KVER}
+-
+ clean:
+ 	cd aic_load_fw/; $(MAKE) clean; cd ..
+ 	cd aic8800_fdrv/; $(MAKE) clean; cd ..
+diff --git a/src/Module.symvers b/src/Module.symvers
+deleted file mode 100644
+index dcb49d8..0000000
+--- a/src/Module.symvers
++++ /dev/null
+@@ -1,9 +0,0 @@
+-0x00000000	get_fw_path	/home/nikita/Projects/archer-vtx/aic8800/src/aic_load_fw/aic_load_fw	EXPORT_SYMBOL	
+-0x00000000	get_testmode	/home/nikita/Projects/archer-vtx/aic8800/src/aic_load_fw/aic_load_fw	EXPORT_SYMBOL	
+-0x00000000	set_testmode	/home/nikita/Projects/archer-vtx/aic8800/src/aic_load_fw/aic_load_fw	EXPORT_SYMBOL	
+-0x00000000	get_hardware_info	/home/nikita/Projects/archer-vtx/aic8800/src/aic_load_fw/aic_load_fw	EXPORT_SYMBOL	
+-0x00000000	get_adap_test	/home/nikita/Projects/archer-vtx/aic8800/src/aic_load_fw/aic_load_fw	EXPORT_SYMBOL	
+-0x00000000	get_userconfig_xtal_cap	/home/nikita/Projects/archer-vtx/aic8800/src/aic_load_fw/aic_load_fw	EXPORT_SYMBOL	
+-0x00000000	get_userconfig_txpwr_idx	/home/nikita/Projects/archer-vtx/aic8800/src/aic_load_fw/aic_load_fw	EXPORT_SYMBOL	
+-0x00000000	get_userconfig_txpwr_ofst	/home/nikita/Projects/archer-vtx/aic8800/src/aic_load_fw/aic_load_fw	EXPORT_SYMBOL	
+-0x00000000	aicwf_prealloc_txq_alloc	/home/nikita/Projects/archer-vtx/aic8800/src/aic_load_fw/aic_load_fw	EXPORT_SYMBOL	
+diff --git a/src/aic8800_fdrv/Kconfig b/src/aic8800_fdrv/Kconfig
+index 9db2b65..25a6480 100644
+--- a/src/aic8800_fdrv/Kconfig
++++ b/src/aic8800_fdrv/Kconfig
+@@ -2,35 +2,3 @@ config AIC8800_WLAN_SUPPORT
+ 	tristate "AIC8800 wlan Support"
+ 	---help---
+ 	  This is support for aic wifi driver.
+-
+-#choice
+-#        depends on AIC8800_WLAN_SUPPORT
+-#        prompt "Select 8800 support platform"
+-#
+-#        config PLATFORM_ROCHCHIP
+-#                bool "PLATFORM_ROCHCHIP"
+-#                depends on AIC8800_WLAN_SUPPORT
+-#
+-#	config PLATFORM_ALLWINNER
+-#                bool "PLATFORM_ALLWINNER"
+-#                depends on AIC8800_WLAN_SUPPORT
+-#
+-#        config PLATFORM_AMLOGIC
+-#                bool "PLATFORM_AMLOGIC"
+-#                depends on AIC8800_WLAN_SUPPORT
+-#
+-#        config PLATFORM_UBUNTU
+-#                bool "PLATFORM_UBUNTU"
+-#                depends on AIC8800_WLAN_SUPPORT
+-#
+-#endchoice
+-#
+-#config USE_5G
+-#	bool "AIC8800 force enable 5G"
+-#        ---help---
+-#          This is parameter that force enable 5G.
+-#
+-#config HE_FOR_OLD_KERNEL
+-#	bool "AIC8800 support AX for old kernel"
+-#        ---help---
+-#          This is parameter that enable AX for old kernel.
+diff --git a/src/aic8800_fdrv/Makefile b/src/aic8800_fdrv/Makefile
+index 2707895..afde93f 100644
+--- a/src/aic8800_fdrv/Makefile
++++ b/src/aic8800_fdrv/Makefile
+@@ -32,7 +32,7 @@ CONFIG_RWNX_FHOST ?= y
+ #
+ # DEBUG OPTIONS
+ CONFIG_RWNX_UM_HELPER_DFLT ?= "/dini/dini_bin/rwnx_umh.sh"
+-CONFIG_AIC_FW_PATH = "/vendor/etc/firmware"
++CONFIG_AIC_FW_PATH = "/lib/firmware/aicsemi"
+ export CONFIG_AIC_FW_PATH
+ 
+ #
+@@ -215,7 +215,7 @@ ccflags-$(CONFIG_HE_FOR_OLD_KERNEL) += -DCONFIG_HE_FOR_OLD_KERNEL
+ ccflags-$(CONFIG_VHT_FOR_OLD_KERNEL) += -DCONFIG_VHT_FOR_OLD_KERNEL
+ ccflags-$(CONFIG_COEX) += -DCONFIG_COEX
+ 
+-ccflags-y += -DCONFIG_RWNX_FULLMAC
++ccflags-$(CONFIG_RWNX_FULLMAC) += -DCONFIG_RWNX_FULLMAC 
+ ccflags-y += -I$(src)/.
+ ccflags-$(CONFIG_RWNX_RADAR) += -DCONFIG_RWNX_RADAR
+ ccflags-$(CONFIG_RWNX_MON_DATA) += -DCONFIG_RWNX_MON_DATA
+@@ -303,78 +303,10 @@ ccflags-$(CONFIG_GKI) += -DCONFIG_GKI
+ ccflags-$(CONFIG_SCHED_SCAN) += -DCONFIG_SCHED_SCAN
+ ccflags-$(CONFIG_FILTER_TCP_ACK) += -DCONFIG_FILTER_TCP_ACK
+ 
+-# Platform support list
+-CONFIG_PLATFORM_ROCKCHIP ?= n
+-CONFIG_PLATFORM_ALLWINNER ?= n
+-CONFIG_PLATFORM_AMLOGIC ?= n
+-CONFIG_PLATFORM_UBUNTU ?= y
+-
+-ifeq ($(CONFIG_PLATFORM_ROCKCHIP), y)
+-#KDIR ?= /home/yaya/E/Rockchip/3288/Android5/kernel/
+-#ARCH ?= arm
+-#CROSS_COMPILE ?= /home/yaya/D/Workspace/CyberQuantum/JinHaoYue/rk3288/prebuilts/gcc/linux-x86/arm/arm-eabi-4.6/bin/arm-eabi-
+-#KDIR ?= /home/yaya/E/Rockchip/3229/Android7/RK3229_ANDROID7.1_v1.01_20170914/rk3229_Android7.1_v1.01_xml0914/kernel
+-#ARCH ?= arm
+-#CROSS_COMPILE ?= /home/yaya/E/Rockchip/3229/Android7/RK3229_ANDROID7.1_v1.01_20170914/rk3229_Android7.1_v1.01_xml0914/prebuilts/gcc/linux-x86/arm/arm-eabi-4.6/bin/arm-eabi-
+-#KDIR  ?= /home/yaya/E/Rockchip/3229/Android9/rk3229_android9.0_box/kernel
+-#ARCH ?= arm
+-#CROSS_COMPILE ?= /home/yaya/E/Rockchip/3229/Android9/rk3229_android9.0_box/prebuilts/gcc/linux-x86/arm/gcc-linaro-6.3.1-2017.05-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
+-KDIR ?= /home/yaya/E/Rockchip/3566/firefly/Android11.0/Firefly-RK356X_Android11.0_git_20210824/RK356X_Android11.0/kernel
+-ARCH ?= arm64
+-CROSS_COMPILE ?= /home/yaya/E/Rockchip/3566/Android11/rk3566_rk3568_android11_oranth/prebuilts/gcc/linux-x86/aarch64/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+-#ARCH ?= arm
+-#CROSS_COMPILE ?=/home/yaya/D/Workspace/CyberQuantum/JinHaoYue/rk3288/prebuilts/gcc/linux-x86/arm/arm-eabi-4.6/bin/arm-eabi-
+-#KDIR ?=/home/yaya/D/Workspace/CyberQuantum/JinHaoYue/rk3288/kernel
+-#KDIR := /home/yaya/E/Rockchip/3566/Android/kernel
+-#ARCH ?= arm64
+-#CROSS_COMPILE ?= /home/yaya/E/Rockchip/3566/Android/prebuilts/gcc/linux-x86/aarch64/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+-#KDIR ?= /home/yaya/E/Rockchip/3566/Android11/rk3566_rk3568_android11_oranth/kernel
+-#ARCH ?= arm64
+-#CROSS_COMPILE ?= /home/yaya/E/Rockchip/3566/Android11/rk3566_rk3568_android11_oranth/prebuilts/gcc/linux-x86/aarch64/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+-#KDIR ?= /home/yaya/D/samba1/aiden/SDK/Rockchip/3588/Android12/RK3588_Android12.0/kernel-5.10
+-#ARCH ?= arm64
+-#CROSS_COMPILE ?= /home/yaya/D/samba1/aiden/SDK/Rockchip/3588/Android12/RK3588_Android12.0/prebuilts/gcc/linux-x86/aarch64/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+-ccflags-y += -DANDROID_PLATFORM
+-ccflags-y += -DCONFIG_PLATFORM_ROCKCHIP
+-endif
+-
+-ifeq ($(CONFIG_PLATFORM_ALLWINNER), y)
+-KDIR  ?= /home/yaya/E/Allwinner/R818/R818/AndroidQ/lichee/kernel/linux-4.9
+-ARCH ?= arm64
+-CROSS_COMPILE ?= /home/yaya/E/Allwinner/R818/R818/AndroidQ/lichee/out/gcc-linaro-5.3.1-2016.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+-ccflags-y += -DANDROID_PLATFORM
+-endif
+-
+-ifeq ($(CONFIG_PLATFORM_AMLOGIC), y)
+-ccflags-y += -DANDROID_PLATFORM
+-ARCH ?= arm
+-CROSS_COMPILE ?= /home/yaya/D/Workspace/CyberQuantum/JinHaoYue/amls905x3/SDK/20191101-0tt-asop/android9.0/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin/arm-linux-androidkernel-
+-KDIR ?= /home/yaya/D/Workspace/CyberQuantum/JinHaoYue/amls905x3/SDK/20191101-0tt-asop/android9.0/out/target/product/u202/obj/KERNEL_OBJ/
+-
+-endif
+-
+-ifeq ($(CONFIG_PLATFORM_UBUNTU), y)
+-KVER := $(or $(KVER), $(kernelver), $(KERNELRELEASE), $(shell uname -r))
+-KDIR ?= /lib/modules/$(KVER)/build
+-PWD  ?= $(shell pwd)
+-MODDESTDIR ?= /lib/modules/$(KVER)/kernel/drivers/net/wireless/aic8800
+-ARCH ?= $(shell uname -m | sed -e s/i.86/i386/ -e s/armv.l/arm/ -e s/aarch64/arm64/)
+-CROSS_COMPILE ?=
+-endif
+-
+ 
+ all: modules
+ modules:
+-#	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) LLVM=1 LLVM_IAS=1 modules
+ 	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules
+-install:
+-	mkdir -p $(MODDESTDIR)
+-	install -p -m 644 $(MODULE_NAME).ko  $(MODDESTDIR)
+-	/sbin/depmod -a ${KVER}
+-
+-uninstall:
+-	rm -rfv $(MODDESTDIR)/$(MODULE_NAME).ko
+-	/sbin/depmod -a ${KVER}
+ 
+ clean:
+ 	rm -rf *.o *.ko *.o.* *.mod.* modules.* .modules.order.cmd Module.* .a* .o* .*.o.* *.mod .tmp* .cache.mk
+diff --git a/src/aic8800_fdrv/aicwf_wext_linux.c b/src/aic8800_fdrv/aicwf_wext_linux.c
+index fdfab4c..68d172f 100644
+--- a/src/aic8800_fdrv/aicwf_wext_linux.c
++++ b/src/aic8800_fdrv/aicwf_wext_linux.c
+@@ -400,7 +400,7 @@ static char *aicwf_get_iwe_stream_mac_addr(struct rwnx_hw* rwnx_hw,
+ 	iwe->cmd = SIOCGIWAP;
+ 	iwe->u.ap_addr.sa_family = ARPHRD_ETHER;
+ 
+-	if(scan_re->bss && scan_re->bss->bssid){
++	if(scan_re->bss){
+ 	memcpy(iwe->u.ap_addr.sa_data, scan_re->bss->bssid, ETH_ALEN);
+ 	}
+ 
+@@ -1199,8 +1199,9 @@ void aicwf_set_wireless_ext( struct net_device *ndev, struct rwnx_hw *rwnx_hw){
+ 	
+ 	init_completion(&rwnx_hw->wext_scan_com);
+ 	INIT_LIST_HEAD(&rwnx_hw->wext_scanre_list);
+-	
+-	ndev->wireless_handlers = (struct iw_handler_def *)&aic_handlers_def;
++	#ifdef CONFIG_WIRELESS_EXT
++    	ndev->wireless_handlers = (struct iw_handler_def *)&aic_handlers_def;
++	#endif
+ }
+ 
+ 
+diff --git a/src/aic8800_fdrv/rwnx_main.c b/src/aic8800_fdrv/rwnx_main.c
+index 363da25..cb800f7 100644
+--- a/src/aic8800_fdrv/rwnx_main.c
++++ b/src/aic8800_fdrv/rwnx_main.c
+@@ -5000,7 +5000,7 @@ static int rwnx_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
+  * @change_beacon: Change the beacon parameters for an access point mode
+  *	interface. This should reject the call when AP mode wasn't started.
+  */
+-#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 7, 0)
++#if 1
+ static int rwnx_cfg80211_change_beacon(struct wiphy *wiphy, struct net_device *dev,
+                                        struct cfg80211_ap_update *info)
+ #else
+@@ -5020,7 +5020,7 @@ static int rwnx_cfg80211_change_beacon(struct wiphy *wiphy, struct net_device *d
+ 	elem.dma_addr = 0;
+ 
+     // Build the beacon
+-#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 7, 0)
++#if 1
+     buf = rwnx_build_bcn(bcn, &info->beacon);
+ #else
+     buf = rwnx_build_bcn(bcn, info);
+@@ -5117,7 +5117,7 @@ cfg80211_chandef_identical(const struct cfg80211_chan_def *chandef1,
+ }
+ #endif
+ 
+-static int rwnx_cfg80211_set_monitor_channel(struct wiphy *wiphy,
++static int rwnx_cfg80211_set_monitor_channel(struct wiphy *wiphy,struct net_device *net_device,
+                                              struct cfg80211_chan_def *chandef)
+ {
+     struct rwnx_hw *rwnx_hw = wiphy_priv(wiphy);
+@@ -5614,7 +5614,7 @@ static int rwnx_cfg80211_get_channel(struct wiphy *wiphy,
+     if (rwnx_vif->vif_index == rwnx_hw->monitor_vif)
+     {
+         //retrieve channel from firmware
+-        rwnx_cfg80211_set_monitor_channel(wiphy, NULL);
++        rwnx_cfg80211_set_monitor_channel(wiphy,0, NULL);
+     }
+ 
+     //Check if channel context is valid
+@@ -5797,7 +5797,7 @@ int rwnx_cfg80211_start_radar_detection(struct wiphy *wiphy,
+                                         struct net_device *dev,
+                                         struct cfg80211_chan_def *chandef
+                                     #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0))
+-                                        , u32 cac_time_ms
++                                        , u32 cac_time_ms , int tail
+                                     #endif
+                                         )
+ {
+@@ -5949,7 +5949,7 @@ static int rwnx_cfg80211_channel_switch(struct wiphy *wiphy,
+     } else {
+         INIT_WORK(&csa->work, rwnx_csa_finish);
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 159)
++#if 1
+         // commit b82730bf57b54803ab94abbfd8c4422a7081886d: "wifi: cfg80211/mac80211: move puncturing into chandef"
+         cfg80211_ch_switch_started_notify(dev, &csa->chandef, 0, params->count, params->block_tx);
+ #elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+diff --git a/src/aic8800_fdrv/rwnx_radar.c b/src/aic8800_fdrv/rwnx_radar.c
+index d4ea9d2..5f26293 100644
+--- a/src/aic8800_fdrv/rwnx_radar.c
++++ b/src/aic8800_fdrv/rwnx_radar.c
+@@ -1399,7 +1399,7 @@ static void rwnx_radar_cac_work(struct work_struct *ws)
+                     #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
+                        &ctxt->chan_def,
+                     #endif
+-                       NL80211_RADAR_CAC_FINISHED, GFP_KERNEL);
++                       NL80211_RADAR_CAC_FINISHED, GFP_KERNEL,0);
+     rwnx_send_apm_stop_cac_req(rwnx_hw, radar->cac_vif);
+     rwnx_chanctx_unlink(radar->cac_vif);
+ 
+@@ -1499,7 +1499,7 @@ void rwnx_radar_cancel_cac(struct rwnx_radar *radar)
+                         #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
+                            &ctxt->chan_def,
+                         #endif
+-                           NL80211_RADAR_CAC_ABORTED, GFP_KERNEL);
++                           NL80211_RADAR_CAC_ABORTED, GFP_KERNEL,0);
+         rwnx_chanctx_unlink(radar->cac_vif);
+     }
+ 
+diff --git a/src/aic_load_fw/Makefile b/src/aic_load_fw/Makefile
+index 0563f8a..eae28a5 100644
+--- a/src/aic_load_fw/Makefile
++++ b/src/aic_load_fw/Makefile
+@@ -18,8 +18,8 @@ CONFIG_PLATFORM_UBUNTU ?= y
+ 
+ CONFIG_AIC_LOADFW_SUPPORT = m
+ MODULE_NAME = aic_load_fw
+-# CONFIG_AIC_FW_PATH = "/vendor/etc/firmware"
+-# export CONFIG_AIC_FW_PATH
++CONFIG_AIC_FW_PATH = "/lib/firmware/aicsemi"
++export CONFIG_AIC_FW_PATH
+ 
+ ifeq ($(CONFIG_USB_SUPPORT), y)
+ ccflags-y += -DAICWF_USB_SUPPORT
+@@ -48,58 +48,9 @@ $(MODULE_NAME)-$(CONFIG_PREALLOC_RX_SKB)	 += aicwf_rx_prealloc.o
+ $(MODULE_NAME)-$(CONFIG_PREALLOC_TXQ)     += aicwf_txq_prealloc.o
+ 
+ 
+-
+-ifeq ($(CONFIG_PLATFORM_ROCKCHIP), y)
+-ccflags-$(CONFIG_PLATFORM_ROCKCHIP) += -DCONFIG_PLATFORM_ROCKCHIP
+-#KDIR := /home/yaya/E/Rockchip/3229/Android7/RK3229_ANDROID7.1_v1.01_20170914/rk3229_Android7.1_v1.01_xml0914/kernel
+-#ARCH ?= arm
+-#CROSS_COMPILE ?= /home/yaya/E/Rockchip/3229/Android7/RK3229_ANDROID7.1_v1.01_20170914/rk3229_Android7.1_v1.01_xml0914/prebuilts/gcc/linux-x86/arm/arm-eabi-4.6/bin/arm-eabi-
+-KDIR  := /home/yaya/E/Rockchip/3229/Android9/rk3229_android9.0_box/kernel
+-ARCH ?=$(shell uname -m | sed -e s/i.86/i386/ -e s/armv.l/arm/ -e s/aarch64/arm64/)
+-CROSS_COMPILE ?= /home/yaya/E/Rockchip/3229/Android9/rk3229_android9.0_box/prebuilts/gcc/linux-x86/arm/gcc-linaro-6.3.1-2017.05-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
+-#KDIR  := /home/yaya/E/Rockchip/3399/rk3399-android-10/kernel
+-#ARCH ?= arm64
+-#CROSS_COMPILE ?= /home/yaya/E/Rockchip/3399/rk3399-android-10/prebuilts/gcc/linux-x86/aarch64/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+-endif
+-
+-ifeq ($(CONFIG_PLATFORM_ALLWINNER), y)
+-ccflags-$(CONFIG_PLATFORM_ALLWINNER) += -DCONFIG_PLATFORM_ALLWINNER
+-KDIR  := /home/yaya/E/Allwinner/R818/R818/AndroidQ/lichee/kernel/linux-4.9
+-ARCH ?= arm64
+-CROSS_COMPILE ?= /home/yaya/E/Allwinner/R818/R818/AndroidQ/lichee/out/gcc-linaro-5.3.1-2016.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+-endif
+-
+-ifeq ($(CONFIG_PLATFORM_AMLOGIC), y)
+-ccflags-$(CONFIG_PLATFORM_AMLOGIC) += -DCONFIG_PLATFORM_AMLOGIC
+-ARCH := arm
+-CROSS_COMPILE := /home/yaya/D/Workspace/CyberQuantum/JinHaoYue/amls905x3/SDK/20191101-0tt-asop/android9.0/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin/arm-linux-androidkernel-
+-KDIR := /home/yaya/D/Workspace/CyberQuantum/JinHaoYue/amls905x3/SDK/20191101-0tt-asop/android9.0/out/target/product/u202/obj/KERNEL_OBJ/
+-
+-endif
+-
+-ifeq ($(CONFIG_PLATFORM_UBUNTU), y)
+-KVER := $(or $(KVER), $(kernelver), $(KERNELRELEASE), $(shell uname -r))
+-KDIR ?= /lib/modules/$(KVER)/build
+-PWD  ?= $(shell pwd)
+-MODDESTDIR ?= /lib/modules/$(KVER)/kernel/drivers/net/wireless/aic8800
+-ARCH ?= $(shell uname -m | sed -e s/i.86/i386/ -e s/armv.l/arm/ -e s/aarch64/arm64/)
+-CROSS_COMPILE ?=
+-ccflags-$(CONFIG_PLATFORM_UBUNTU) += -DCONFIG_PLATFORM_UBUNTU
+-endif
+-
+-
+ all: modules
+ modules:
+ 	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules
+ 
+-install:
+-	mkdir -p $(MODDESTDIR)
+-	install -p -m 644 $(MODULE_NAME).ko  $(MODDESTDIR)/
+-	/sbin/depmod -a ${KVER}
+-
+-uninstall:
+-	rm -rfv $(MODDESTDIR)/$(MODULE_NAME).ko
+-	/sbin/depmod -a ${KVER}
+-
+ clean:
+ 	rm -rf *.o *.ko *.o.* *.mod.* modules.* .modules.order.cmd Module.* .a* .o* .*.o.* *.mod .tmp* .cache.mk
+diff --git a/src/aic_load_fw/aicbluetooth.c b/src/aic_load_fw/aicbluetooth.c
+index 32a1547..cc5daec 100644
+--- a/src/aic_load_fw/aicbluetooth.c
++++ b/src/aic_load_fw/aicbluetooth.c
+@@ -171,7 +171,7 @@ enum aicbsp_cpmode_type {
+ #if defined(CONFIG_PLATFORM_UBUNTU)
+ static const char* aic_default_fw_path = "/lib/firmware";
+ #else
+-static const char* aic_default_fw_path = "/vendor/etc/firmware";
++static const char* aic_default_fw_path = "/lib/firmware/aicsemi";
+ #endif
+ char aic_fw_path[FW_PATH_MAX];
+ module_param_string(aic_fw_path, aic_fw_path, FW_PATH_MAX, 0660);
+diff --git a/src/dkms.conf b/src/dkms.conf
+deleted file mode 100644
+index 753f44c..0000000
+--- a/src/dkms.conf
++++ /dev/null
+@@ -1,11 +0,0 @@
+-PACKAGE_NAME="aic8800"
+-PACKAGE_VERSION="1.0.5"
+-BUILT_MODULE_NAME[0]="aic8800_fdrv"
+-BUILT_MODULE_LOCATION[0]="aic8800_fdrv/"
+-DEST_MODULE_LOCATION[0]="/updates/dkms/"
+-BUILT_MODULE_NAME[1]="aic_load_fw"
+-BUILT_MODULE_LOCATION[1]="aic_load_fw/"
+-DEST_MODULE_LOCATION[1]="/updates/dkms/"
+-MAKE="arch='$arch' kernelver='$kernelver' ./driverctl make all"
+-CLEAN="make clean"
+-AUTOINSTALL="YES"
+diff --git a/src/driverctl b/src/driverctl
+deleted file mode 100755
+index 1704cca..0000000
+--- a/src/driverctl
++++ /dev/null
+@@ -1,180 +0,0 @@
+-#!/bin/sh
+-# Copyright 2022-2023 Alkis Georgopoulos <github.com/alkisg>
+-# SPDX-License-Identifier: GPL-3.0-or-later
+-
+-# Substituted at build time by dh_install
+-PKG=aic8800
+-MOD=aic8800
+-VER=1.0.5
+-
+-help() {
+-    cat <<EOF
+-Usage: $0 <dh_install | make | postinst | postrm | troubleshoot>
+-
+-Handle BrosTrend driver installation and support tasks.
+-EOF
+-}
+-
+-cmd_dh_install() {
+-    local lpkg lversion lmod
+-
+-    lpkg=$1
+-    lversion=$2
+-    case "$lpkg" in
+-    rtl*) lmod=${lpkg#rtl} ;;
+-    aic*) lmod=$lpkg ;;
+-    esac
+-    re test -n "$lpkg"
+-    re test -n "$lversion"
+-    re cd "$(dirname "$0")"
+-    re find . -type d -exec chmod 755 {} \;
+-    re find . -type f -not -name driverctl -exec chmod 644 {} \;
+-    # All of driverctl is already loaded so we can sed it
+-    re sed "s/$PKG/$lpkg/" -i driverctl
+-    re sed "s/$MOD/$lmod/" -i driverctl
+-    re sed "s/$VER/$lversion/" -i driverctl
+-    if [ "$lpkg" = "aic8800" ]; then
+-        re cd -
+-        return 0
+-    elif [ "$lmod" = "8852bu" ]; then
+-        re sed 's/^options.*/&\n#\n# Disable the Virtual CD-ROM mode\noptions usb-storage quirks=0bda:1a2b:i/' -i "$lmod.conf"
+-    elif [ -f "$lmod.conf" ]; then
+-        re sed 's/^options/# &/' -i "$lmod.conf"
+-    fi
+-    test -f hal/phydm/phydm_debug.h &&
+-        re sed 's/\bprintk/_RTW_DBG/' -i hal/phydm/phydm_debug.h
+-    re sed 's/.*-Werror$/EXTRA_CFLAGS += -Wno-error/' -i Makefile
+-    re sed 's|^EXTRA_CFLAGS += -Wimplicit-fallthrough=3$|#&|' -i Makefile
+-    re sed 's|^\(CONFIG_RTW_DEBUG =\).*|\1 n|' -i Makefile
+-    re sed 's|^\(CONFIG_WIFI_MONITOR =\).*|\1 y|' -i Makefile
+-    re sed 's|^\(CONFIG_RTW_LOG_LEVEL =\).*|\1 0|' -i Makefile
+-    re sed 's|uname -m[^)]*|uname -m \| sed -e s/i.86/i386/ -e s/armv.l/arm/ -e s/aarch64/arm64/|' -i Makefile
+-    re cd -
+-}
+-
+-cmd_make() {
+-    local memavail nproc
+-
+-    memavail=$(LANG=C free | awk '/Mem:/ { print $2 }')
+-    memavail=${memavail:-400000}
+-    nproc=$(($(nproc) - 1))
+-    test "$nproc" -ge 1 || nproc=1
+-    if [ "$memavail" -lt 400000 ] && [ "$nproc" -gt 1 ]; then
+-        # In low-RAM systems, use a single process to avoid OOM
+-        echo "Free RAM=$memavail Kb, limiting compilation processes from $nproc to 1"
+-        nproc=1
+-    fi
+-    # arch and kernelver are set by dkms, when it's used
+-    arch=${arch:-$(uname -m)}
+-    case "$arch" in
+-    i?86) arch=i386 ;;
+-    armv?l) arch=arm ;;
+-    aarch64) arch=arm64 ;;
+-    esac
+-    export ARCH="$arch"
+-    kernelver=${kernelver:-$(uname -r)}
+-    # Logs at e.g. /var/lib/dkms/rtl88???u/1.15.11/5.15.76-v8+/aarch64/log/make.log
+-    make all "ARCH=$ARCH" "-j$nproc" "KVER=$kernelver" "KSRC=/lib/modules/$kernelver/build"
+-}
+-
+-# Cloned to postinst
+-cmd_postinst() {
+-    local link
+-
+-    # Remove all links, both legacy and new ones
+-    for link in /etc/apt/trusted.gpg.d/brostrend.gpg \
+-        /etc/apt/trusted.gpg.d/trendtechcn.gpg \
+-        /etc/apt/sources.list.d/brostrend.list \
+-        /etc/apt/sources.list.d/trendtechcn.list \
+-        "/etc/modprobe.d/$MOD.conf"; do
+-        if [ -L "$link" ]; then
+-            rm -f "$link"
+-        fi
+-    done
+-    # Symlink our modprobe options/blacklist file
+-    link="/usr/src/$PKG-$VER/$MOD.conf"
+-    if [ -f "$link" ] &&
+-        [ -d /etc/modprobe.d ] &&
+-        [ ! -e "/etc/modprobe.d/$MOD.conf" ]; then
+-        ln -s "$link" /etc/modprobe.d/
+-    fi
+-    # Assume this package is the newest; link to that
+-    link=/usr/share/$PKG-dkms/brostrend.gpg
+-    if [ -d /etc/apt/trusted.gpg.d ] &&
+-        [ ! -e /etc/apt/trusted.gpg.d/brostrend.gpg ]; then
+-        ln -s "$link" /etc/apt/trusted.gpg.d/
+-    fi
+-    link=/usr/share/$PKG-dkms/brostrend.list
+-    if [ -d /etc/apt/sources.list.d ] &&
+-        [ ! -e /etc/apt/sources.list.d/brostrend.list ]; then
+-        ln -s "$link" /etc/apt/sources.list.d/
+-    fi
+-}
+-
+-# Cloned to postrm
+-cmd_postrm() {
+-    local link
+-
+-    # Remove all links, both legacy and new ones
+-    for link in /etc/apt/trusted.gpg.d/brostrend.gpg \
+-        /etc/apt/trusted.gpg.d/trendtechcn.gpg \
+-        /etc/apt/sources.list.d/brostrend.list \
+-        /etc/apt/sources.list.d/trendtechcn.list \
+-        "/etc/modprobe.d/$MOD.conf"; do
+-        if [ -L "$link" ]; then
+-            rm -f "$link"
+-        fi
+-    done
+-    # Symlink to the first remaining brostrend package
+-    for link in /usr/share/*-dkms/brostrend.gpg; do
+-        if [ -f "$link" ] &&
+-            [ -d /etc/apt/trusted.gpg.d ] &&
+-            [ ! -e /etc/apt/trusted.gpg.d/brostrend.gpg ]; then
+-            ln -s "$link" /etc/apt/trusted.gpg.d/
+-            break
+-        fi
+-    done
+-    for link in /usr/share/*-dkms/brostrend.list; do
+-        if [ -f "$link" ] &&
+-            [ -d /etc/apt/sources.list.d ] &&
+-            [ ! -e /etc/apt/sources.list.d/brostrend.list ]; then
+-            ln -s "$link" /etc/apt/sources.list.d/
+-            break
+-        fi
+-    done
+-}
+-
+-die() {
+-    echo "$*" >&2
+-    exit 1
+-}
+-
+-re() {
+-    "$@" || die "Aborting, command failed: $*"
+-}
+-
+-main() {
+-    local cmd
+-
+-    while :; do
+-        case "$1" in
+-        /usr/src/*/driverctl)
+-            # Allow wildcard invocation e.g. /usr/src/*/driverctl troubleshoot
+-            shift
+-            continue
+-            ;;
+-        dh_install | make | postinst | postrm | troubleshoot)
+-            cmd="cmd_$1"
+-            shift
+-            "$cmd" "$@"
+-            exit $?
+-            ;;
+-        *)
+-            help >&2
+-            exit 1
+-            ;;
+-        esac
+-    done
+-}
+-
+-main "$@"
+diff --git a/src/load.sh b/src/load.sh
+deleted file mode 100755
+index 4b9257e..0000000
+--- a/src/load.sh
++++ /dev/null
+@@ -1,6 +0,0 @@
+-#!/bin/sh
+-make -j8
+-sudo insmod ./aic_load_fw/aic_load_fw.ko
+-sudo insmod ./aic8800_fdrv/aic8800_fdrv.ko dpsm=1 monitor_only=1
+-# sudo iw dev wlan0 del
+-# sudo iw dev wlan2 del
+-- 
+2.39.2
+
